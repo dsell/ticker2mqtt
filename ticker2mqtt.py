@@ -29,6 +29,7 @@ from config import Config
 import ystockquote
 
 
+CLIENT_NAME = "ticker2mqtt"
 CLIENT_VERSION = "0.6"
 MQTT_TIMEOUT = 60	#seconds
 
@@ -37,13 +38,14 @@ MQTT_TIMEOUT = 60	#seconds
 #TODO  need to deal with no config file existing!!!
 
 #read in configuration file
-f = file('ticker.conf')
-	cfg = Config(f)
-	MQTT_HOST = cfg.MQTT_HOST
-	MQTT_PORT = cfg.MQTT_PORT
-	BASE_TOPIC = cfg.BASE_TOPIC
-	STOCK_TICKERS = cfg.STOCK_TICKERS
-	INTERVAL = cfg.INTERVAL
+f = file('.ticker2mqtt.conf')
+cfg = Config(f)
+MQTT_HOST = cfg.MQTT_HOST
+MQTT_PORT = cfg.MQTT_PORT
+CLIENT_TOPIC = cfg.CLIENT_TOPIC
+BASE_TOPIC = cfg.BASE_TOPIC
+STOCK_TICKERS = cfg.STOCK_TICKERS
+INTERVAL = cfg.INTERVAL
 
 
 mqtt_connected = 0
