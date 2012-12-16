@@ -14,14 +14,15 @@ __copyright__ = "Copyright (C) Dennis Sell"
 
 #TODO keep last price of day as previous close
 #TODO Add in a time range for the market and only querry when open
+#TODO avoid weekend querries
 #TODO need to add a begin and end date for each ticker, so that commodities can cycle thru
+#TODO fix control-c exit... it sometimes hangs on thread
 
 
-#import sys
+import os
+import sys
 import mosquitto
-#import socket
 import time
-#import subprocess
 import logging
 import signal
 import threading
@@ -36,9 +37,12 @@ MQTT_TIMEOUT = 60	#seconds
 
 #TODO might want to add a lock file
 #TODO  need to deal with no config file existing!!!
+#TODO move config file to home dir
+
 
 #read in configuration file
-f = file('.ticker2mqtt.conf')
+homedir = os.path.expanduser("~")
+f = file(homedir + '.ticker2mqtt.conf')
 cfg = Config(f)
 MQTT_HOST = cfg.MQTT_HOST
 MQTT_PORT = cfg.MQTT_PORT
@@ -112,7 +116,7 @@ def do_stock_loop():
 		pass
 
 
-def on_message():
+def on_message(self, obj, msg):
 	if (( msg.topic == CLIENT_TOPIC + "ping" ) and ( msg.payload == "request" )):
 		mqttc.publish( CLIENT_TOPIC + "ping", "response", qos = 1, retain = 0 )
 
@@ -123,6 +127,7 @@ def do_disconnect():
        mqtt_connected = False
        print "Disconnected"
 
+#TODO are these redundant?????????????
 
 def mqtt_disconnect():
 	global mqtt_connected
