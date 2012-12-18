@@ -23,6 +23,7 @@ import os
 import sys
 import mosquitto
 import time
+import datetime
 import logging
 import signal
 import threading
@@ -42,7 +43,7 @@ MQTT_TIMEOUT = 60	#seconds
 
 #read in configuration file
 homedir = os.path.expanduser("~")
-f = file(homedir + '.ticker2mqtt.conf')
+f = file(homedir + '/.ticker2mqtt.conf')
 cfg = Config(f)
 MQTT_HOST = cfg.MQTT_HOST
 MQTT_PORT = cfg.MQTT_PORT
@@ -50,6 +51,11 @@ CLIENT_TOPIC = cfg.CLIENT_TOPIC
 BASE_TOPIC = cfg.BASE_TOPIC
 STOCK_TICKERS = cfg.STOCK_TICKERS
 INTERVAL = cfg.INTERVAL
+OPEN_TIME_HOUR = cfg.OPEN_TIME_HOUR
+OPEN_TIME_MIN = cfg.OPEN_TIME_MIN
+CLOSE_TIME_HOUR = cfg.CLOSE_TIME_HOUR
+CLOSE_TIME_MIN = cfg.CLOSE_TIME_MIN
+TRADING_DOW = cfg.TRADING_DOW
 
 
 mqtt_connected = 0
@@ -74,6 +80,11 @@ def do_stock_loop():
 	global running
 	global STOCK_TICKERS
 	global mqttc
+	global OPEN_TIME_HOUR
+	global OPEN_TIME_MIN
+	global CLOSE_TIME_HOUR
+	global CLOSE_TIME_MIN
+	global TRADING_DOW
 
 	while ( running ):
 		if ( mqtt_connected ):
@@ -81,32 +92,42 @@ def do_stock_loop():
 				ticker = stock.ticker
 		
 				print "querrying for ", ticker
-				mqttc.publish( BASE_TOPIC + "/" + ticker + "/name", stock.name, qos = 2, retain = 1 )
+				now = datetime.datetime.now()
+				open_time = now.replace( hour=OPEN_TIME_HOUR, minute=OPEN_TIME_MIN, second=0 )
+				close_time = now.replace( hour=CLOSE_TIME_HOUR, minute=CLOSE_TIME_MIN, second=0 )
+				open_day = False
+				for day in TRADING_DOW:
+					if ( day == datetime.datetime.today().weekday() ):
+						open_day = True
+				if (( now > open_time) and ( now < close_time ) and open_day):
+					mqttc.publish( BASE_TOPIC + "/" + ticker + "/name", stock.name, qos = 2, retain = 1 )
 
-				price = ystockquote.get_price( ticker )
-				mqttc.publish( BASE_TOPIC + "/" + ticker + "/price", price, qos = 2, retain = 1 )
+					price = ystockquote.get_price( ticker )
+					mqttc.publish( BASE_TOPIC + "/" + ticker + "/price", price, qos = 2, retain = 1 )
 
-				change = ystockquote.get_change( ticker )
-				mqttc.publish( BASE_TOPIC + "/" + ticker + "/change", change, qos = 2, retain = 1 )
+					change = ystockquote.get_change( ticker )
+					mqttc.publish( BASE_TOPIC + "/" + ticker + "/change", change, qos = 2, retain = 1 )
 
-				volume = ystockquote.get_volume( ticker )
-				mqttc.publish( BASE_TOPIC + "/" + ticker + "/volume", volume, qos = 2, retain = 1 )
+					volume = ystockquote.get_volume( ticker )
+					mqttc.publish( BASE_TOPIC + "/" + ticker + "/volume", volume, qos = 2, retain = 1 )
 
-				if ( stock.high_low ):
-					yrhigh = ystockquote.get_52_week_high( ticker )
-					mqttc.publish( BASE_TOPIC + "/" + ticker + "/yrhigh", yrhigh, qos = 2, retain = 1 )
+					if ( stock.high_low ):
+						yrhigh = ystockquote.get_52_week_high( ticker )
+						mqttc.publish( BASE_TOPIC + "/" + ticker + "/yrhigh", yrhigh, qos = 2, retain = 1 )
 
-					yrlow = ystockquote.get_52_week_low( ticker )
-					mqttc.publish( BASE_TOPIC + "/" + ticker + "/yrlow", yrlow, qos = 2, retain = 1 )
+						yrlow = ystockquote.get_52_week_low( ticker )
+						mqttc.publish( BASE_TOPIC + "/" + ticker + "/yrlow", yrlow, qos = 2, retain = 1 )
 
-				if ( stock.mavg ):
-					avg50 = ystockquote.get_50day_moving_avg( ticker )
-					mqttc.publish( BASE_TOPIC + "/" + ticker + "/50day-ma", avg50, qos = 2, retain = 1 )
+					if ( stock.mavg ):
+						avg50 = ystockquote.get_50day_moving_avg( ticker )
+						mqttc.publish( BASE_TOPIC + "/" + ticker + "/50day-ma", avg50, qos = 2, retain = 1 )
 
-					avg200 = ystockquote.get_200day_moving_avg( ticker )
-					mqttc.publish( BASE_TOPIC + "/" + ticker + "/200day-ma", avg200, qos = 2, retain = 1 )
+						avg200 = ystockquote.get_200day_moving_avg( ticker )
+						mqttc.publish( BASE_TOPIC + "/" + ticker + "/200day-ma", avg200, qos = 2, retain = 1 )
 
-				mqttc.publish( BASE_TOPIC + "/" + ticker  + "/time", time.strftime( "%x %X" ), qos = 2, retain = 1 )
+					mqttc.publish( BASE_TOPIC + "/" + ticker  + "/time", time.strftime( "%x %X" ), qos = 2, retain = 1 )
+				else:
+					print "market closed"
 			if ( INTERVAL ):
 				print "Waiting ", INTERVAL, " minutes for next update."
 				time.sleep(60 * INTERVAL)
