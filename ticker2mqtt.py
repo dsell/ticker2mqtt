@@ -29,6 +29,7 @@ import signal
 import threading
 from config import Config
 import ystockquote
+import commands
 
 
 CLIENT_NAME = "ticker2mqtt"
@@ -71,8 +72,11 @@ def on_connect(self, obj, rc):
 
 	mqtt_connected = True
 	print "MQTT Connected"
-	mqttc.publish( CLIENT_TOPIC + "status" , "running", 1, 1 )
+	mqttc.publish( CLIENT_TOPIC + "/status" , "online", 1, 1 )
 	mqttc.publish( CLIENT_TOPIC + "version", CLIENT_VERSION, 1, 1 )
+	ip = commands.getoutput("/sbin/ifconfig").split("\n")[1].split()[1][5:]
+	mqttc.publish( CLIENT_TOPIC + "ip", ip, 1, 1 )
+	mqttc.publish( CLIENT_TOPIC + "pid", os.getpid(), 1, 1 )
 	mqttc.subscribe( CLIENT_TOPIC + "ping", 2)
 
 
@@ -101,31 +105,33 @@ def do_stock_loop():
 						open_day = True
 				if (( now > open_time) and ( now < close_time ) and open_day):
 					mqttc.publish( BASE_TOPIC + "/" + ticker + "/name", stock.name, qos = 2, retain = 1 )
+					try:
+						price = ystockquote.get_price( ticker )
+						mqttc.publish( BASE_TOPIC + "/" + ticker + "/price", price, qos = 2, retain = 1 )
 
-					price = ystockquote.get_price( ticker )
-					mqttc.publish( BASE_TOPIC + "/" + ticker + "/price", price, qos = 2, retain = 1 )
+						change = ystockquote.get_change( ticker )
+						mqttc.publish( BASE_TOPIC + "/" + ticker + "/change", change, qos = 2, retain = 1 )
 
-					change = ystockquote.get_change( ticker )
-					mqttc.publish( BASE_TOPIC + "/" + ticker + "/change", change, qos = 2, retain = 1 )
+						volume = ystockquote.get_volume( ticker )
+						mqttc.publish( BASE_TOPIC + "/" + ticker + "/volume", volume, qos = 2, retain = 1 )
 
-					volume = ystockquote.get_volume( ticker )
-					mqttc.publish( BASE_TOPIC + "/" + ticker + "/volume", volume, qos = 2, retain = 1 )
+						if ( stock.high_low ):
+							yrhigh = ystockquote.get_52_week_high( ticker )
+							mqttc.publish( BASE_TOPIC + "/" + ticker + "/yrhigh", yrhigh, qos = 2, retain = 1 )
 
-					if ( stock.high_low ):
-						yrhigh = ystockquote.get_52_week_high( ticker )
-						mqttc.publish( BASE_TOPIC + "/" + ticker + "/yrhigh", yrhigh, qos = 2, retain = 1 )
+							yrlow = ystockquote.get_52_week_low( ticker )
+							mqttc.publish( BASE_TOPIC + "/" + ticker + "/yrlow", yrlow, qos = 2, retain = 1 )
 
-						yrlow = ystockquote.get_52_week_low( ticker )
-						mqttc.publish( BASE_TOPIC + "/" + ticker + "/yrlow", yrlow, qos = 2, retain = 1 )
+						if ( stock.mavg ):
+							avg50 = ystockquote.get_50day_moving_avg( ticker )
+							mqttc.publish( BASE_TOPIC + "/" + ticker + "/50day-ma", avg50, qos = 2, retain = 1 )
 
-					if ( stock.mavg ):
-						avg50 = ystockquote.get_50day_moving_avg( ticker )
-						mqttc.publish( BASE_TOPIC + "/" + ticker + "/50day-ma", avg50, qos = 2, retain = 1 )
+							avg200 = ystockquote.get_200day_moving_avg( ticker )
+							mqttc.publish( BASE_TOPIC + "/" + ticker + "/200day-ma", avg200, qos = 2, retain = 1 )
 
-						avg200 = ystockquote.get_200day_moving_avg( ticker )
-						mqttc.publish( BASE_TOPIC + "/" + ticker + "/200day-ma", avg200, qos = 2, retain = 1 )
-
-					mqttc.publish( BASE_TOPIC + "/" + ticker  + "/time", time.strftime( "%x %X" ), qos = 2, retain = 1 )
+						mqttc.publish( BASE_TOPIC + "/" + ticker  + "/time", time.strftime( "%x %X" ), qos = 2, retain = 1 )
+					except:
+						print "querry error in ystockquote."
 				else:
 					print "market closed"
 			if ( INTERVAL ):
@@ -143,10 +149,12 @@ def on_message(self, obj, msg):
 
 
 def do_disconnect():
-       global mqtt_connected
-       mqttc.disconnect()
-       mqtt_connected = False
-       print "Disconnected"
+		global mqtt_connected
+		mqttc.disconnect()
+		mqtt_connected = False
+		print "Disconnected"
+		mqttc.publish ( CLIENT_TOPIC + "/status" , "offline", 1, 1 )
+
 
 #TODO are these redundant?????????????
 
@@ -164,7 +172,7 @@ def mqtt_connect():
 	rc = 1
 	while ( rc ):
 		print "Attempting connection..."
-		mqttc.will_set(CLIENT_TOPIC + "status", "disconnected_", 1, 1)
+		mqttc.will_set( CLIENT_TOPIC + "/status", "disconnected", 1, 1)
 
 		#define the mqtt callbacks
 		mqttc.on_message = on_message
