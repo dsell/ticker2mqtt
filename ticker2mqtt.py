@@ -12,225 +12,100 @@ __author__ = "Dennis Sell"
 __copyright__ = "Copyright (C) Dennis Sell"
 
 
-#TODO keep last price of day as previous close
-#TODO Add in a time range for the market and only querry when open
-#TODO avoid weekend querries
-#TODO need to add a begin and end date for each ticker, so that commodities can cycle thru
-#TODO fix control-c exit... it sometimes hangs on thread
+APPNAME = "ticker2mqtt"
+VERSION = "0.8"
+WATCHTOPIC = "/raw/" + APPNAME + "/command"
 
 
-import os
-import sys
-import mosquitto
+import threading
+from weatheralerts import nws
+import time
+import subprocess
+from daemon import Daemon
+from mqttcore import MQTTClientCore
+from mqttcore import main
 import time
 import datetime
-import logging
-import signal
-import threading
-from config import Config
 import ystockquote
-import commands
+
+class MyMQTTClientCore(MQTTClientCore):
+    def __init__(self, appname, clienttype):
+        MQTTClientCore.__init__(self, appname, clienttype)
+        self.clientversion = VERSION
+        self.tickerlist = self.cfg.STOCK_TICKERS
+        self.interval = self.cfg.INTERVAL
+        self.basetopic = self.cfg.BASE_TOPIC
+        self.stocktickers = self.cfg.STOCK_TICKERS
+        self.openhour = self.cfg.OPEN_TIME_HOUR
+        self.openmin = self.cfg.OPEN_TIME_MIN
+        self.closehour = self.cfg.CLOSE_TIME_HOUR
+        self.closemin = self.cfg.CLOSE_TIME_MIN
+        self.tradingdow = self.cfg.TRADING_DOW
 
 
-CLIENT_NAME = "ticker2mqtt"
-CLIENT_VERSION = "0.6"
-MQTT_TIMEOUT = 60	#seconds
+        t = threading.Thread(target=self.do_thread_loop)
+        t.start()
 
+    def do_thread_loop(self):
+        while ( self.running ):
+		    if ( self.mqtt_connected ):
+			    for stock in self.tickerlist:
+				    ticker = stock.ticker
+				    print "querrying for ", ticker
+				    now = datetime.datetime.now()
+				    open_time = now.replace( hour=self.openhour, minute=self.openmin, second=0 )
+				    close_time = now.replace( hour=self.closehour, minute=self.closemin, second=0 )
+				    open_day = False
+				    for day in self.tradingdow:
+					    if ( day == datetime.datetime.today().weekday() ):
+						    open_day = True
+				    if (( now > open_time) and ( now < close_time ) and open_day):
+					    self.mqttc.publish( BASE_TOPIC + "/" + ticker + "/name", stock.name, qos = 2, retain=True)
+					    try:
+						    price = ystockquote.get_price( ticker )
+						    self.mqttc.publish( BASE_TOPIC + "/" + ticker + "/price", price, qos = 2, retain=True)
+#TODO add previous close value!!!!!!1
+						    change = ystockquote.get_change( ticker )
+						    self.mqttc.publish( BASE_TOPIC + "/" + ticker + "/change", change, qos = 2, retain=True)
 
-#TODO might want to add a lock file
-#TODO  need to deal with no config file existing!!!
-#TODO move config file to home dir
+						    volume = ystockquote.get_volume( ticker )
+						    self.mqttc.publish( BASE_TOPIC + "/" + ticker + "/volume", volume, qos = 2, retain=True)
 
+						    if ( stock.high_low ):
+							    yrhigh = ystockquote.get_52_week_high( ticker )
+							    self.mqttc.publish( BASE_TOPIC + "/" + ticker + "/yrhigh", yrhigh, qos = 2, retain=True)
 
-#read in configuration file
-homedir = os.path.expanduser("~")
-f = file(homedir + '/.ticker2mqtt.conf')
-cfg = Config(f)
-MQTT_HOST = cfg.MQTT_HOST
-MQTT_PORT = cfg.MQTT_PORT
-CLIENT_TOPIC = cfg.CLIENT_TOPIC
-BASE_TOPIC = cfg.BASE_TOPIC
-STOCK_TICKERS = cfg.STOCK_TICKERS
-INTERVAL = cfg.INTERVAL
-OPEN_TIME_HOUR = cfg.OPEN_TIME_HOUR
-OPEN_TIME_MIN = cfg.OPEN_TIME_MIN
-CLOSE_TIME_HOUR = cfg.CLOSE_TIME_HOUR
-CLOSE_TIME_MIN = cfg.CLOSE_TIME_MIN
-TRADING_DOW = cfg.TRADING_DOW
+							    yrlow = ystockquote.get_52_week_low( ticker )
+							    self.mqttc.publish( BASE_TOPIC + "/" + ticker + "/yrlow", yrlow, qos = 2, retain=True)
 
+						    if ( stock.mavg ):
+							    avg50 = ystockquote.get_50day_moving_avg( ticker )
+							    self.mqttc.publish( BASE_TOPIC + "/" + ticker + "/50day-ma", avg50, qos = 2, retain=True)
 
-mqtt_connected = 0
+							    avg200 = ystockquote.get_200day_moving_avg( ticker )
+							    self.mqttc.publish( BASE_TOPIC + "/" + ticker + "/200day-ma", avg200, qos = 2, retain=True)
 
-#TICKER = sys.argv[1]
-
-
-#define what happens after connection
-def on_connect(self, obj, rc):
-	global mqtt_connected
-	global running
-	global alerts
-
-	mqtt_connected = True
-	print "MQTT Connected"
-	mqttc.publish( CLIENT_TOPIC + "/status" , "online", 1, 1 )
-	mqttc.publish( CLIENT_TOPIC + "version", CLIENT_VERSION, 1, 1 )
-	ip = commands.getoutput("/sbin/ifconfig").split("\n")[1].split()[1][5:]
-	mqttc.publish( CLIENT_TOPIC + "ip", ip, 1, 1 )
-	mqttc.publish( CLIENT_TOPIC + "pid", os.getpid(), 1, 1 )
-	mqttc.subscribe( CLIENT_TOPIC + "ping", 2)
-
-
-def do_stock_loop():
-	global running
-	global STOCK_TICKERS
-	global mqttc
-	global OPEN_TIME_HOUR
-	global OPEN_TIME_MIN
-	global CLOSE_TIME_HOUR
-	global CLOSE_TIME_MIN
-	global TRADING_DOW
-
-	while ( running ):
-		if ( mqtt_connected ):
-			for stock in STOCK_TICKERS:
-				ticker = stock.ticker
-		
-				print "querrying for ", ticker
-				now = datetime.datetime.now()
-				open_time = now.replace( hour=OPEN_TIME_HOUR, minute=OPEN_TIME_MIN, second=0 )
-				close_time = now.replace( hour=CLOSE_TIME_HOUR, minute=CLOSE_TIME_MIN, second=0 )
-				open_day = False
-				for day in TRADING_DOW:
-					if ( day == datetime.datetime.today().weekday() ):
-						open_day = True
-				if (( now > open_time) and ( now < close_time ) and open_day):
-					mqttc.publish( BASE_TOPIC + "/" + ticker + "/name", stock.name, qos = 2, retain = 1 )
-					try:
-						price = ystockquote.get_price( ticker )
-						mqttc.publish( BASE_TOPIC + "/" + ticker + "/price", price, qos = 2, retain = 1 )
-
-						change = ystockquote.get_change( ticker )
-						mqttc.publish( BASE_TOPIC + "/" + ticker + "/change", change, qos = 2, retain = 1 )
-
-						volume = ystockquote.get_volume( ticker )
-						mqttc.publish( BASE_TOPIC + "/" + ticker + "/volume", volume, qos = 2, retain = 1 )
-
-						if ( stock.high_low ):
-							yrhigh = ystockquote.get_52_week_high( ticker )
-							mqttc.publish( BASE_TOPIC + "/" + ticker + "/yrhigh", yrhigh, qos = 2, retain = 1 )
-
-							yrlow = ystockquote.get_52_week_low( ticker )
-							mqttc.publish( BASE_TOPIC + "/" + ticker + "/yrlow", yrlow, qos = 2, retain = 1 )
-
-						if ( stock.mavg ):
-							avg50 = ystockquote.get_50day_moving_avg( ticker )
-							mqttc.publish( BASE_TOPIC + "/" + ticker + "/50day-ma", avg50, qos = 2, retain = 1 )
-
-							avg200 = ystockquote.get_200day_moving_avg( ticker )
-							mqttc.publish( BASE_TOPIC + "/" + ticker + "/200day-ma", avg200, qos = 2, retain = 1 )
-
-						mqttc.publish( BASE_TOPIC + "/" + ticker  + "/time", time.strftime( "%x %X" ), qos = 2, retain = 1 )
-					except:
-						print "querry error in ystockquote."
-				else:
-					print "market closed"
-			if ( INTERVAL ):
-				print "Waiting ", INTERVAL, " minutes for next update."
-				time.sleep(60 * INTERVAL)
-			else:
-				running = False	#do a single shot
-				print "Querries complete."
-		pass
-
-
-def on_message(self, obj, msg):
-	if (( msg.topic == CLIENT_TOPIC + "ping" ) and ( msg.payload == "request" )):
-		mqttc.publish( CLIENT_TOPIC + "ping", "response", qos = 1, retain = 0 )
-
-
-def do_disconnect():
-		global mqtt_connected
-		mqttc.disconnect()
-		mqtt_connected = False
-		print "Disconnected"
-		mqttc.publish ( CLIENT_TOPIC + "/status" , "offline", 1, 1 )
-
-
-#TODO are these redundant?????????????
-
-def mqtt_disconnect():
-	global mqtt_connected
-	print "Disconnecting..."
-	mqttc.disconnect()
-	if ( mqtt_connected ):
-		mqtt_connected = False 
-		print "MQTT Disconnected"
-
-
-def mqtt_connect():
-
-	rc = 1
-	while ( rc ):
-		print "Attempting connection..."
-		mqttc.will_set( CLIENT_TOPIC + "/status", "disconnected", 1, 1)
-
-		#define the mqtt callbacks
-		mqttc.on_message = on_message
-		mqttc.on_connect = on_connect
-#		mqttc.on_disconnect = on_disconnect
-
-		#connect
-		rc = mqttc.connect( MQTT_HOST, MQTT_PORT, MQTT_TIMEOUT )
-		if rc != 0:
-			logging.info( "Connection failed with error code $s, Retrying in 30 seconds.", rc )
-			print "Connection failed with error code ", rc, ", Retrying in 30 seconds." 
-			time.sleep(30)
-		else:
-			print "Connect initiated OK"
-
-
-def cleanup(signum, frame):
-	mqtt_disconnect()
-	sys.exit(signum)
-
-
-#create a client
-mqttc = mosquitto.Mosquitto( CLIENT_NAME ) 
-
-#trap kill signals including control-c
-signal.signal(signal.SIGTERM, cleanup)
-signal.signal(signal.SIGINT, cleanup)
-
-running = True
-
-t = threading.Thread(target=do_stock_loop)
-t.start()
-
-
-def main_loop():
-	global mqtt_connected
-	mqttc.loop(10)
-	while running:
-		if ( mqtt_connected ):
-			rc = mqttc.loop(10)
-			if rc != 0:	
-				mqtt_disconnect()
-				print rc
-				print "Stalling for 20 seconds to allow broker connection to time out."
-				time.sleep(20)
-				mqtt_connect()
-				mqttc.loop(10)
-		pass
-
-
-mqtt_connect()
-main_loop()
+						    self.mqttc.publish( BASE_TOPIC + "/" + ticker  + "/time", time.strftime( "%x %X" ), qos = 2, retain=True)
+					    except:
+						    print "querry error in ystockquote."
+				    else:
+					    print "market closed"
+			    if ( self.interval ):
+				    print "Waiting ", self.interval, " minutes for next update."
+				    time.sleep(60 * self.interval)
+			    else:
+				    self.running = False	#do a single shot
+				    print "Querries complete."
+		    pass
 
 
 
+class MyDaemon(Daemon):
+    def run(self):
+        mqttcore = MyMQTTClientCore(APPNAME, clienttype="type1")
+        mqttcore.main_loop()
 
 
-
-
-
-
+if __name__ == "__main__":
+    daemon = MyDaemon('/tmp/' + APPNAME + '.pid')
+    main(daemon)
