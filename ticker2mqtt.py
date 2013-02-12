@@ -60,32 +60,32 @@ class MyMQTTClientCore(MQTTClientCore):
 					    if ( day == datetime.datetime.today().weekday() ):
 						    open_day = True
 				    if (( now > open_time) and ( now < close_time ) and open_day):
-					    self.mqttc.publish( BASE_TOPIC + "/" + ticker + "/name", stock.name, qos = 2, retain=True)
+					    self.mqttc.publish( self.basetopic + "/" + ticker + "/name", stock.name, qos = 2, retain=True)
 					    try:
 						    price = ystockquote.get_price( ticker )
-						    self.mqttc.publish( BASE_TOPIC + "/" + ticker + "/price", price, qos = 2, retain=True)
+						    self.mqttc.publish( self.basetopic + "/" + ticker + "/price", price, qos = 2, retain=True)
 #TODO add previous close value!!!!!!1
 						    change = ystockquote.get_change( ticker )
-						    self.mqttc.publish( BASE_TOPIC + "/" + ticker + "/change", change, qos = 2, retain=True)
+						    self.mqttc.publish( self.basetopic + "/" + ticker + "/change", change, qos = 2, retain=True)
 
 						    volume = ystockquote.get_volume( ticker )
-						    self.mqttc.publish( BASE_TOPIC + "/" + ticker + "/volume", volume, qos = 2, retain=True)
+						    self.mqttc.publish( self.basetopic + "/" + ticker + "/volume", volume, qos = 2, retain=True)
 
 						    if ( stock.high_low ):
 							    yrhigh = ystockquote.get_52_week_high( ticker )
-							    self.mqttc.publish( BASE_TOPIC + "/" + ticker + "/yrhigh", yrhigh, qos = 2, retain=True)
+							    self.mqttc.publish( self.basetopic + "/" + ticker + "/yrhigh", yrhigh, qos = 2, retain=True)
 
 							    yrlow = ystockquote.get_52_week_low( ticker )
-							    self.mqttc.publish( BASE_TOPIC + "/" + ticker + "/yrlow", yrlow, qos = 2, retain=True)
+							    self.mqttc.publish( self.basetopic + "/" + ticker + "/yrlow", yrlow, qos = 2, retain=True)
 
 						    if ( stock.mavg ):
 							    avg50 = ystockquote.get_50day_moving_avg( ticker )
-							    self.mqttc.publish( BASE_TOPIC + "/" + ticker + "/50day-ma", avg50, qos = 2, retain=True)
+							    self.mqttc.publish( self.basetopic + "/" + ticker + "/50day-ma", avg50, qos = 2, retain=True)
 
 							    avg200 = ystockquote.get_200day_moving_avg( ticker )
-							    self.mqttc.publish( BASE_TOPIC + "/" + ticker + "/200day-ma", avg200, qos = 2, retain=True)
+							    self.mqttc.publish( self.basetopic + "/" + ticker + "/200day-ma", avg200, qos = 2, retain=True)
 
-						    self.mqttc.publish( BASE_TOPIC + "/" + ticker  + "/time", time.strftime( "%x %X" ), qos = 2, retain=True)
+						    self.mqttc.publish( self.basetopic + "/" + ticker  + "/time", time.strftime( "%x %X" ), qos = 2, retain=True)
 					    except:
 						    print "querry error in ystockquote."
 				    else:
