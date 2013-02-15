@@ -48,7 +48,7 @@ class MyMQTTClientCore(MQTTClientCore):
     def do_thread_loop(self):
         while ( self.running ):
 		    if ( self.mqtt_connected ):
-			    for stock in self.tickerlist:
+                for stock in self.tickerlist:
 				    ticker = stock.ticker
 				    print "querrying for ", ticker
 				    now = datetime.datetime.now()
