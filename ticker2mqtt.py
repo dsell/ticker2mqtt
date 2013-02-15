@@ -13,7 +13,7 @@ __copyright__ = "Copyright (C) Dennis Sell"
 
 
 APPNAME = "ticker2mqtt"
-VERSION = "0.8"
+VERSION = "0.10"
 WATCHTOPIC = "/raw/" + APPNAME + "/command"
 
 
@@ -42,9 +42,8 @@ class MyMQTTClientCore(MQTTClientCore):
         self.closemin = self.cfg.CLOSE_TIME_MIN
         self.tradingdow = self.cfg.TRADING_DOW
 
-
-        t = threading.Thread(target=self.do_thread_loop)
-        t.start()
+        self.t = threading.Thread(target=self.do_thread_loop)
+        self.t.start()
 
     def do_thread_loop(self):
         while ( self.running ):
@@ -90,14 +89,10 @@ class MyMQTTClientCore(MQTTClientCore):
 						    print "querry error in ystockquote."
 				    else:
 					    print "market closed"
-			    if ( self.interval ):
-				    print "Waiting ", self.interval, " minutes for next update."
-				    time.sleep(60 * self.interval)
-			    else:
-				    self.running = False	#do a single shot
-				    print "Querries complete."
+                if ( self.interval ):
+                    print "Waiting ", self.interval, " minutes for next update."
+                    time.sleep(self.interval*60)
 		    pass
-
 
 
 class MyDaemon(Daemon):
