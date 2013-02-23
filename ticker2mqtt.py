@@ -32,6 +32,7 @@ class MyMQTTClientCore(MQTTClientCore):
     def __init__(self, appname, clienttype):
         MQTTClientCore.__init__(self, appname, clienttype)
         self.clientversion = VERSION
+        self.watchtopic = WATCHTOPIC
         self.tickerlist = self.cfg.STOCK_TICKERS
         self.interval = self.cfg.INTERVAL
         self.basetopic = self.cfg.BASE_TOPIC
@@ -42,57 +43,62 @@ class MyMQTTClientCore(MQTTClientCore):
         self.closemin = self.cfg.CLOSE_TIME_MIN
         self.tradingdow = self.cfg.TRADING_DOW
 
-        self.t = threading.Thread(target=self.do_thread_loop)
-        self.t.start()
+    def on_connect(self, mself, obj, rc):
+        MQTTClientCore.on_connect(self, mself, obj, rc)
+        self.mqttc.subscribe(self.watchtopic, qos=2)
+        self.mqttc.subscribe("/raw/clock/minute")
+
+    def on_message(self, mself, obj, msg):
+        MQTTClientCore.on_message(self, mself, obj, msg)
+        if (msg.topic == self.watchtopic):
+            if (msg.payload == "trigger"):
+                self.t = threading.Thread(target=self.do_thread_loop)
+                self.t.start()
+        if (msg.topic == "/raw/clock/minute"):
+            if (msg.payload == "4"):
+                self.t = threading.Thread(target=self.do_thread_loop)
+                self.t.start()
 
     def do_thread_loop(self):
-        while ( self.running ):
+        if ( self.running ):
             if ( self.mqtt_connected ):
                 for stock in self.tickerlist:
-				    ticker = stock.ticker
-				    print "querrying for ", ticker
-				    now = datetime.datetime.now()
-				    open_time = now.replace( hour=self.openhour, minute=self.openmin, second=0 )
-				    close_time = now.replace( hour=self.closehour, minute=self.closemin, second=0 )
-				    open_day = False
-				    for day in self.tradingdow:
-					    if ( day == datetime.datetime.today().weekday() ):
-						    open_day = True
-				    if (( now > open_time) and ( now < close_time ) and open_day):
-					    self.mqttc.publish( self.basetopic + "/" + ticker + "/name", stock.name, qos = 2, retain=True)
-					    try:
-						    price = ystockquote.get_price( ticker )
-						    self.mqttc.publish( self.basetopic + "/" + ticker + "/price", price, qos = 2, retain=True)
-#TODO add previous close value!!!!!!1
-						    change = ystockquote.get_change( ticker )
-						    self.mqttc.publish( self.basetopic + "/" + ticker + "/change", change, qos = 2, retain=True)
+                    ticker = stock.ticker
+                    print "querrying for ", ticker
+                    now = datetime.datetime.now()
+                    open_time = now.replace( hour=self.openhour, minute=self.openmin, second=0 )
+                    close_time = now.replace( hour=self.closehour, minute=self.closemin, second=0 )
+                    open_day = False
+                    for day in self.tradingdow:
+                        if ( day == datetime.datetime.today().weekday() ):
+                            open_day = True
+                    if (( now > open_time) and ( now < close_time ) and open_day):
+                        self.mqttc.publish( self.basetopic + "/" + ticker + "/name", stock.name, qos = 2, retain=True)
+                        try:
+                            price = ystockquote.get_price( ticker )
+                            self.mqttc.publish( self.basetopic + "/" + ticker + "/price", price, qos = 2, retain=True)
+                            #TODO add previous close value!!!!!!1
+                            change = ystockquote.get_change( ticker )
+                            self.mqttc.publish( self.basetopic + "/" + ticker + "/change", change, qos = 2, retain=True)
+                            volume = ystockquote.get_volume( ticker )
+                            self.mqttc.publish( self.basetopic + "/" + ticker + "/volume", volume, qos = 2, retain=True)
+                            if ( stock.high_low ):
+                                yrhigh = ystockquote.get_52_week_high( ticker )
+                                self.mqttc.publish( self.basetopic + "/" + ticker + "/yrhigh", yrhigh, qos = 2, retain=True)
+                                yrlow = ystockquote.get_52_week_low( ticker )
+                                self.mqttc.publish( self.basetopic + "/" + ticker + "/yrlow", yrlow, qos = 2, retain=True)
+                            if ( stock.mavg ):
+                                avg50 = ystockquote.get_50day_moving_avg( ticker )
+                                self.mqttc.publish( self.basetopic + "/" + ticker + "/50day-ma", avg50, qos = 2, retain=True)
 
-						    volume = ystockquote.get_volume( ticker )
-						    self.mqttc.publish( self.basetopic + "/" + ticker + "/volume", volume, qos = 2, retain=True)
-
-						    if ( stock.high_low ):
-							    yrhigh = ystockquote.get_52_week_high( ticker )
-							    self.mqttc.publish( self.basetopic + "/" + ticker + "/yrhigh", yrhigh, qos = 2, retain=True)
-
-							    yrlow = ystockquote.get_52_week_low( ticker )
-							    self.mqttc.publish( self.basetopic + "/" + ticker + "/yrlow", yrlow, qos = 2, retain=True)
-
-						    if ( stock.mavg ):
-							    avg50 = ystockquote.get_50day_moving_avg( ticker )
-							    self.mqttc.publish( self.basetopic + "/" + ticker + "/50day-ma", avg50, qos = 2, retain=True)
-
-							    avg200 = ystockquote.get_200day_moving_avg( ticker )
-							    self.mqttc.publish( self.basetopic + "/" + ticker + "/200day-ma", avg200, qos = 2, retain=True)
-
-						    self.mqttc.publish( self.basetopic + "/" + ticker  + "/time", time.strftime( "%x %X" ), qos = 2, retain=True)
-					    except:
-						    print "querry error in ystockquote."
-				    else:
-					    print "market closed"
-                if ( self.interval ):
-                    print "Waiting ", self.interval, " minutes for next update."
-                    time.sleep(self.interval*60)
-		    pass
+                                avg200 = ystockquote.get_200day_moving_avg( ticker )
+                                self.mqttc.publish( self.basetopic + "/" + ticker + "/200day-ma", avg200, qos = 2, retain=True)
+                            self.mqttc.publish( self.basetopic + "/" + ticker  + "/time", time.strftime( "%x %X" ), qos = 2, retain=True)
+                        except:
+                            print "querry error in ystockquote." 
+                    else:
+                        print "Markets closed"
+                        self.mqttc.publish( self.basetopic + "/" + ticker  + "/null", "", qos = 2, retain=True)
 
 
 class MyDaemon(Daemon):
