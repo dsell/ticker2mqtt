@@ -26,7 +26,7 @@ import datetime
 from daemon import daemon_version
 
 
-COREVERSION = 0.5
+COREVERSION = 0.6
 
 
 class MQTTClientCore:
@@ -202,7 +202,7 @@ class MQTTClientCore:
                         logging.info("Using password for login")
                         print "Logging in as " + self.username
                         self.mqttc.username_pw_set(self.username)
-                self.mqttc.will_set(self.clientbase, "disconnected", qos=1, retain=self.persist)
+                self.mqttc.will_set(self.clientbase + "/status", "disconnected", qos=1, retain=self.persist)
                 
                 #define the mqtt callbacks
                 self.mqttc.on_message = self.on_message
